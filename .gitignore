@@ -1,3 +1,8 @@
+data/VOCdevkit/
+src/utils/__pycache__/
+.vscode/
+best_model.pth
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
