@@ -1,7 +1,6 @@
 import random
 import os 
 import logging
-import pickle
 
 import numpy as np
 import pandas as pd
@@ -12,6 +11,7 @@ from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import ConcatDataset
 
+from tqdm import tqdm
 from utils.util import get_labedict
 from utils.dataset import VOCDataset, VOC_ProbDataset
 from utils.train import TrainEpoch, ValidEpoch
@@ -20,7 +20,7 @@ from utils.augmentation import get_training_augmentation, \
                                 get_validation_augmentation, \
                                 get_preaug, get_postaug, \
                                 get_preprocessing
-                                
+from utils.losses import DiceFocal                                                      
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
@@ -43,6 +43,7 @@ def get_logger():
     return logger
 
 def seed_all(seed):
+    # https://discuss.pytorch.org/t/reproducibility-with-all-the-bells-and-whistles/81097
     if not seed:
         seed = 10
     print("[ Using Seed : ", seed, " ]")
@@ -79,28 +80,37 @@ if __name__ == '__main__':
     kf_cols =  [i for i in train_df.columns if i.startswith('kf')]
     skf_cols =  [i for i in train_df.columns if i.startswith('skf')]
 
-    cnt_df = pd.read_csv('./data/imbalance_df.csv', index_col=0)
-
-    upsample_dict = dict(cnt_df[cnt_df['after'] < 60]['after'].apply(lambda x: int(100/x) ))
-    upsample_list = []
-    for label, num in upsample_dict.items():
-        upsample_list += [label]*num
-    
     # get congigs
-    LR = 0.1
     IMBALANCE = True
     SPLIT = 'random'
+    RESAMPLING_STRATEGY = 'x2'
+    COPYPASTE = True
     SPLIT_RS = 1
     SPLIT_FNUM = 0
-    RESAMPLING_STRATEGY = 'x2'
-    AUG_STRATEGY = 1.0
+
+    LR = 0.1
     ENCODER = 'resnet101'
     ENCODER_WEIGHTS = 'imagenet'
-    ACTIVATION = 'softmax2d' 
     DEVICE = 'cuda'
     VERBOSE = True
-    copy_paste_prob = None if AUG_STRATEGY == 'none' else AUG_STRATEGY
-    copy_paste_prob
+    PASTE_BY = 'cnt' # cnt, performance
+
+    copypaste_prop = None if COPYPASTE == False else 1.0
+
+    # determine paste classes and its probability by cnt_df
+    if PASTE_BY == 'cnt':
+        cnt_df = pd.read_csv('./data/imbalance_df.csv', index_col=0)    
+        paste_dict = dict(cnt_df[cnt_df['after'] < 60]['after'].apply(lambda x: int(100/x) ))
+        paste_list = []
+        for label, num in paste_dict.items():
+            paste_list += [label]*num
+    # determine paste classes by segmentation performance
+    # ref: https://www.researchgate.net/figure/Evaluation-results-of-the-PASCAL-VOC-2012-test-set_tbl1_315635038
+    elif PASTE_BY == 'performance':
+        result_df = pd.read_csv('./data/previous_results.csv', index_col=0)
+        paste_list = list(result_df.mean(axis=1).sort_values()[:8].index)
+    else:
+        paste_list = None
 
     if IMBALANCE:
         print(f'before imbalance {len(train_df)}')
@@ -126,8 +136,8 @@ if __name__ == '__main__':
     dataset_a = VOC_ProbDataset(cur_train_df,
                                 augmentation=get_training_augmentation(),
                                 preprocessing=get_preprocessing(preprocessing_fn),
-                                copypaste_prop = 1,
-                                upsample_list=upsample_list,
+                                copypaste_prop = copypaste_prop,
+                                paste_list=paste_list,
                                 pre_aug=get_preaug,
                                 post_aug=get_postaug(),
                                 label2num=label2num,)
@@ -135,8 +145,8 @@ if __name__ == '__main__':
     dataset_b = VOC_ProbDataset(cur_train_df,
                                 augmentation=get_training_augmentation(),
                                 preprocessing=get_preprocessing(preprocessing_fn),
-                                copypaste_prop = 1,
-                                upsample_list=upsample_list,
+                                copypaste_prop = copypaste_prop,
+                                paste_list=paste_list,
                                 pre_aug=get_preaug,
                                 post_aug=get_postaug(),
                                 label2num=label2num,
@@ -156,7 +166,7 @@ if __name__ == '__main__':
     valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=0)
 
     label_names = label2num.keys()
-    
+
     weight_decay = 1e-4
 
     # create segmentation model with pretrained encoder
@@ -164,22 +174,33 @@ if __name__ == '__main__':
         encoder_name=ENCODER, 
         encoder_weights=ENCODER_WEIGHTS, 
         classes=len(label_names), 
-        activation=ACTIVATION,
+        activation='softmax2d',
     )
 
     classes_of_interest = [label2num[k] for k in label2num.keys() \
                         if k not in ['border']] 
 
-    loss = smp.losses.DiceLoss(mode = 'multiclass', 
-                               from_logits = False,
-                               ignore_index = label2num['border'])
-    setattr(loss, '__name__', 'dice_loss')
+    # loss = smp.losses.DiceLoss(mode = 'multiclass', 
+    #                            from_logits = False,
+    #                            ignore_index = label2num['border'])
+    # setattr(loss, '__name__', 'dice_loss')
+
+    dice = smp.losses.DiceLoss(mode = 'multiclass', 
+                            from_logits = False,
+                            ignore_index = label2num['border'])
+    focal = smp.losses.FocalLoss(mode = 'multiclass', 
+                                ignore_index = label2num['border'])
+
+    loss = DiceFocal(dice, focal)
+    loss_name = 'loss'
+    metric_name = 'm_iou'
+    loss_names = ['loss', 'dice_loss', 'focal_loss']
 
     metrics = [
         Multiclass_IoU_Dice(mean_score=True,
                             nan_score_on_empty=True,
                             classes_of_interest = classes_of_interest,
-                            name='multiclass_iou')
+                            name=metric_name)
     ]
 
     # optimizer = torch.optim.Adam([ 
@@ -198,6 +219,7 @@ if __name__ == '__main__':
         optimizer=optimizer,
         device=DEVICE,
         verbose=VERBOSE,
+        loss_names=loss_names
     )
 
     valid_epoch = ValidEpoch(
@@ -206,6 +228,7 @@ if __name__ == '__main__':
         metrics=metrics, 
         device=DEVICE,
         verbose=VERBOSE,
+        loss_names=loss_names
     )
 
     scheduler = ReduceLROnPlateau(optimizer, 'max', patience=7)
@@ -213,35 +236,53 @@ if __name__ == '__main__':
     max_score = 0
 
     logger.info('Train Started')
-    for i in range(1, 201): 
+    for i in range(1, 2): 
         logger.info('\nEpoch: {}'.format(i))
         train_logs = train_epoch.run(train_loader)
-        logger.info(f"train dice loss:{train_logs['dice_loss']:.4f}, train iou:{train_logs['multiclass_iou']:.4f}")
+        logger.info(f"train loss:{train_logs[f'{loss_name}']:.4f}, train iou:{train_logs[f'{metric_name}']:.4f}")
         valid_logs = valid_epoch.run(valid_loader)
-        logger.info(f"valid dice loss:{valid_logs['dice_loss']:.4f}, valid iou:{valid_logs['multiclass_iou']:.3f}")
-        
-        if (max_score < valid_logs['multiclass_iou']) and (i > 60):
-            max_score = valid_logs['multiclass_iou']
-            torch.save(model, './best_model.pth')
+        logger.info(f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.3f}")
+
+        if (max_score < valid_logs[f'{metric_name}']) and (i > 50):
+            max_score = valid_logs[f'{metric_name}']
+            torch.save(model.state_dict(), './best_model.pt')
             logger.info('Model saved!')
-        scheduler.step(valid_logs['multiclass_iou'])
+        scheduler.step(valid_logs[f'{metric_name}'])
 
     test_df = pd.read_csv('./data/test_df.csv', index_col=0)
+    best_model = smp.DeepLabV3Plus(
+        encoder_name=ENCODER, 
+        encoder_weights=ENCODER_WEIGHTS, 
+        classes=len(label_names), 
+        activation='softmax2d',
+    )
+    best_model.load_state_dict(torch.load('./best_model.pt'))
     test_dataset = VOCDataset(
         test_df,
         augmentation=get_validation_augmentation(), 
         preprocessing=get_preprocessing(preprocessing_fn),
     )
-    test_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=0)
-    test_epoch = ValidEpoch(
-        model, 
-        loss=loss, 
-        metrics=metrics, 
-        device=DEVICE,
-        verbose=True,
-    )
-    logger.info('Test Started')
-    test_log = test_epoch.run(test_loader)
-    logger.info(f"test dice loss:{test_log['dice_loss']:.3f}, \
-                 test iou:{test_log['multiclass_iou']:.3f}")
-                 
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
+
+    test_metric = Multiclass_IoU_Dice(mean_score=False,
+                                        nan_score_on_empty=True,
+                                        classes_of_interest = classes_of_interest,
+                                        name=metric_name)
+
+    results = {}
+    best_model.to(DEVICE)
+    test_metric.to(DEVICE)
+    best_model.eval()
+    for x, y_true, img_id in tqdm(test_loader):
+        x, y_true = x.to(DEVICE), y_true.to(DEVICE)
+        with torch.no_grad():
+            y_pred = best_model.forward(x)
+        result = test_metric(y_pred, y_true)
+        results[img_id[0]] = result[0]
+
+    result_df = pd.DataFrame.from_dict(results, orient='index')
+    result_df.columns = [num2label[num] for num in classes_of_interest]
+    result_df.to_csv('./data/test_result.csv')
+    class_result = result_df.apply(lambda x: np.nanmean(x))
+    print(class_result)
+    print('MIOU: ',np.mean(class_result))

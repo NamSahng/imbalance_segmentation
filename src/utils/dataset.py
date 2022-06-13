@@ -11,7 +11,7 @@ class VOC_ProbDataset(Dataset):
             augmentation=None,
             preprocessing=None,
             copypaste_prop=None,
-            upsample_list=None,
+            paste_list=None,
             pre_aug=None,
             post_aug=None,
             label2num=None,
@@ -27,7 +27,7 @@ class VOC_ProbDataset(Dataset):
         self.preprocessing = preprocessing
         
         self.copypaste_prop = copypaste_prop
-        self.upsample_list = upsample_list
+        self.paste_list = paste_list
         self.pre_aug = pre_aug
         self.post_aug = post_aug
         self.label2num = label2num
@@ -55,7 +55,7 @@ class VOC_ProbDataset(Dataset):
             paste_prob = random.random()
             if paste_prob < self.copypaste_prop:
                 result, image, mask = copyblob(dst_img, dst_mask, 
-                                               self.meta_df, self.upsample_list, 
+                                               self.meta_df, self.paste_list, 
                                                self.label2num, self.pre_aug, self.post_aug)
                 if result:
                     dst_img, dst_mask= image, mask

@@ -121,10 +121,10 @@ def multiclass_dice_iou_score(
                 eps=eps,
             )
             ious.append(iou)
-        mious.append(np.nanmean(ious))
-    
+        mious.append(ious)
+
     if mean_score:
-        return np.nanmean(mious)
+        return np.nanmean(np.nanmean(mious, axis=1))
     else:
         return mious
     

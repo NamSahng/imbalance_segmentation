@@ -102,8 +102,8 @@ def get_postaug():
     ]
     return albu.Compose(train_transform)
 
-def copyblob(dst_img, dst_mask, meta_df, upsample_list, label2num, get_preaug, get_postaug):
-    src_label = random.choice(upsample_list)
+def copyblob(dst_img, dst_mask, meta_df, paste_list, label2num, get_preaug, get_postaug):
+    src_label = random.choice(paste_list)
     src_df = meta_df[meta_df[f'{src_label}_cnt'] == True]
     src_data_num =  random.randint(0,len(src_df)-1)
     src_img = np.array(Image.open(src_df.iloc[src_data_num]['image_loc']))

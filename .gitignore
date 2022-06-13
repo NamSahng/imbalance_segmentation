@@ -2,6 +2,7 @@ data/VOCdevkit/
 src/utils/__pycache__/
 .vscode/
 best_model.pth
+best_model.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
