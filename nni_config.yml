@@ -1,0 +1,8 @@
+searchSpaceFile: nni_search_space.json
+trialCommand: python3 src/train_nni.py  # NOTE: change "python3" to "python" if you are using Windows
+# trialGpuNumber: 0
+trialConcurrency: 1
+tuner:
+  name: GridSearch
+trainingService:
+  platform: local

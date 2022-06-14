@@ -3,6 +3,9 @@ import os
 import logging
 import argparse
 
+import nni
+from nni.utils import merge_parameter
+
 import numpy as np
 import pandas as pd
 import segmentation_models_pytorch as smp
@@ -21,22 +24,9 @@ from utils.augmentation import get_training_augmentation, \
                                 get_validation_augmentation, \
                                 get_preaug, get_postaug, \
                                 get_preprocessing
-from utils.losses import DiceFocal                                                  
+from utils.losses import DiceFocal                                                      
 
-def get_logger():
-    output_loc = os.path.join('./output')
-    os.makedirs(output_loc, exist_ok=True)
-
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-    file_handler = logging.FileHandler(os.path.join(output_loc, 'train.log'))
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
+logger = logging.getLogger('imbalace_seg_NNI')
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
@@ -71,43 +61,13 @@ def get_params():
                         help='random state of train validation split')
     parser.add_argument('--split_fnum', type=int, default=0,
                         help='fold number for each random state split')
-    parser.add_argument('--imbalance', type = bool, default=False, 
-                        help= 'whether make data imbalance intentionally or not')
-    # random, skf_prop, skf_major
-    parser.add_argument('--split', type = str, default='skf_major', 
-                        help= 'train validation splitting strategies')
-    # x2, cluster, cnt
-    parser.add_argument('--resampling_strategy', type = str, default='cnt', 
-                        help= 'set resampling strategy for dataset_b')
-    parser.add_argument('--copypaste', type = bool, default=True, 
-                        help= 'use copy paste augmentation')
-    # cnt, performance                        
-    parser.add_argument('--paste_by', type = str, default='performance', 
-                        help= 'paste strategy of copy paste augmentation')
-
-    parser.add_argument('--lr', type = float, default = 0.1)
-    parser.add_argument('--encoder', type = str, default =  'resnet101')
-    parser.add_argument('--encoder_weights', type = str, default = 'imagenet', help= '')
-    parser.add_argument('--device', type = str, default = 'cpu', help= '')
-    parser.add_argument('--verbose', type = bool, default = True, help= '')
-    parser.add_argument('--copypaste_prop', type = float, default = 1.0, help= '')
-    parser.add_argument('--weight_decay', type = float, default =  1e-4, help= '')
-    parser.add_argument('--momentum', type = float, default = 0.9, help= '')
-    parser.add_argument('--earlystopping_patience', type = int, default =  11)
-    parser.add_argument('--earlystopping_trigger', type = int, default =  0)
-    parser.add_argument('--earlystopping_eps', type = float, default =  1e4)
-
+    parser.add_argument("--configs", type=str,
+                        default='FALSE random x2 FALSE none', 
+                        help="(imbalance split strategies resampling_strategy copypaste paste_by)")
     args, _ = parser.parse_known_args()
     return args
 
-if __name__ == '__main__':
-    # get logger
-    logger = get_logger()
-
-    # set seed
-    seed = 2022
-    seed_all(seed)
-
+def main(args):
     # load data
     labeldict = get_labedict()
     label2num = labeldict['label2num']
@@ -118,30 +78,26 @@ if __name__ == '__main__':
                         if k not in ['border']] 
 
     # get and set configs
-    args = get_params()
-    split_rs = args.split_rs
-    split_fnum = args.split_fnum
-    imbalance = args.imbalance
-    split = args.split
-    resampling_strategy = args.resampling_strategy
-    copypaste = args.copypaste
-    paste_by = args.paste_by
-    imbalance = args.imbalance
-    lr = args.lr            # 0.1
-    encoder = args.encoder  # 'resnet101'
-    encoder_weights = args.encoder_weights  # 'imagenet'
-    device = args.device  # 'cuda'
-    verbose = args.verbose# False
-    copypaste_prop = args.copypaste_prop #  None if copypaste == 'FALSE' else 1.0
-    weight_decay = args.weight_decay # 1e-4
-    momentum = args.momentum # 0.9
-    earlystopping_patience = args.earlystopping_patience # 11
-    earlystopping_trigger = args.earlystopping_trigger # 0
-    earlystopping_eps = args.earlystopping_eps # 1e-4
+    split_rs = args['split_rs']
+    split_fnum = args['split_fnum']
+    configs = args['configs']
+    imbalance, split, resampling_strategy, copypaste, paste_by = configs.split(' ')
+    imbalance = True if imbalance == 'TRUE' else False
+    lr = 0.1
+    encoder = 'resnet101'
+    encoder_weights = 'imagenet'
+    device = 'cuda'
+    verbose = False
+    copypaste_prop = None if copypaste == 'FALSE' else 1.0
+    weight_decay = 1e-4
+    momentum = 0.9
+    earlystopping_patience = 11
+    earlystopping_trigger = 0
+    earlystopping_eps = 1e-4
 
     # make output directory
-    folder = 'trial'
-    output_dir = f'./output_single/{folder}'
+    folder = args['configs'].replace(' ','_')
+    output_dir = f'./output/{folder}/{split_rs}'
     os.makedirs(output_dir, exist_ok=True)
 
     # determine paste classes and its probability by cnt_df
@@ -262,17 +218,17 @@ if __name__ == '__main__':
 
     max_score = 0
     logger.info('Train Started')
-    for i in range(1, 2): 
+    for i in range(1, 201): 
         logger.info('\nEpoch: {}'.format(i))
         train_logs = train_epoch.run(train_loader)
         logger.info(train_logs)
         logger.info(f"train loss:{train_logs[f'{loss_name}']:.4f}, train iou:{train_logs[f'{metric_name}']:.4f}")
         valid_logs = valid_epoch.run(valid_loader)
         logger.info(f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.3f}")
+        nni.report_intermediate_result(valid_logs[f'{metric_name}'])
 
         # Save best validation model
-        #if (max_score < valid_logs[f'{metric_name}']) and (i > 50):
-        if (max_score < valid_logs[f'{metric_name}']):
+        if (max_score < valid_logs[f'{metric_name}']) and (i > 50):
             max_score = valid_logs[f'{metric_name}']
             torch.save(model.state_dict(), os.path.join(output_dir, 'best_model.pt'))
             logger.info('Model saved!')
@@ -281,6 +237,7 @@ if __name__ == '__main__':
         if valid_logs[f'{metric_name}'] < max_score + earlystopping_eps:
             earlystopping_trigger += 1
             if earlystopping_trigger >= earlystopping_patience:
+                nni.report_intermediate_result(max_score)
                 logger.info(f"Ealry stopping!")
                 break
         else:
@@ -325,3 +282,18 @@ if __name__ == '__main__':
     mean_iou = np.mean(class_result)
     logger.info(class_result)
     logger.info('mean IoU: ', mean_iou)
+    nni.report_final_result(mean_iou)
+
+if __name__ == '__main__':
+    # set seed
+    seed = 2022
+    seed_all(seed)
+    try:
+        tuner_params = nni.get_next_parameter()
+        logger.debug(tuner_params)
+        params = vars(merge_parameter(get_params(), tuner_params))
+        print(params)
+        main(params)
+    except Exception as exception:
+        logger.exception(exception)
+        raise

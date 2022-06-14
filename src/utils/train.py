@@ -96,7 +96,9 @@ class TrainEpoch(Epoch):
         loss = self.loss(prediction, y)
         if isinstance(loss, dict):
             cur_loss = loss['loss']
-        cur_loss.backward()
+            cur_loss.backward()
+        else:
+            loss.backward()
         self.optimizer.step()
         return loss, prediction
 
