@@ -9,7 +9,6 @@ import segmentation_models_pytorch as smp
 
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import ConcatDataset
 
 from tqdm import tqdm
@@ -21,12 +20,10 @@ from utils.augmentation import get_training_augmentation, \
                                 get_validation_augmentation, \
                                 get_preaug, get_postaug, \
                                 get_preprocessing
-from utils.losses import DiceFocal                                                  
+from utils.losses import DiceFocal      
+from utils.scheduler import PolyLR                                                      
 
-def get_logger():
-    output_loc = os.path.join('./output')
-    os.makedirs(output_loc, exist_ok=True)
-
+def get_logger(output_loc):
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -55,7 +52,10 @@ def seed_all(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
+    # upsample_bilinear2d_backward_out_cuda
+    # https://discuss.pytorch.org/t/deterministic-behavior-using-bilinear2d/131355/5
+    # torch.use_deterministic_algorithms(True)
+    
 def get_vc_df(cur_train_df, col):
     cnt_vc = pd.DataFrame(cur_train_df[col].value_counts())
     cnt_vc = cnt_vc.reset_index()
@@ -66,15 +66,15 @@ def get_vc_df(cur_train_df, col):
 
 def get_params():
     # Training settings
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser = argparse.ArgumentParser()
     parser.add_argument('--split_rs', type=int, default=1,
                         help='random state of train validation split')
     parser.add_argument('--split_fnum', type=int, default=0,
                         help='fold number for each random state split')
     parser.add_argument('--imbalance', type = bool, default=False, 
                         help= 'whether make data imbalance intentionally or not')
-    # random, skf_prop, skf_major
-    parser.add_argument('--split', type = str, default='skf_major', 
+    # random, skf_prop, skf_major, mskf
+    parser.add_argument('--split', type = str, default='mskf', 
                         help= 'train validation splitting strategies')
     # x2, cluster, cnt
     parser.add_argument('--resampling_strategy', type = str, default='cnt', 
@@ -88,7 +88,7 @@ def get_params():
     parser.add_argument('--lr', type = float, default = 0.1)
     parser.add_argument('--encoder', type = str, default =  'resnet101')
     parser.add_argument('--encoder_weights', type = str, default = 'imagenet', help= '')
-    parser.add_argument('--device', type = str, default = 'cpu', help= '')
+    parser.add_argument('--device', type = str, default = 'cuda', help= '')
     parser.add_argument('--verbose', type = bool, default = True, help= '')
     parser.add_argument('--copypaste_prop', type = float, default = 1.0, help= '')
     parser.add_argument('--weight_decay', type = float, default =  1e-4, help= '')
@@ -101,9 +101,6 @@ def get_params():
     return args
 
 if __name__ == '__main__':
-    # get logger
-    logger = get_logger()
-
     # set seed
     seed = 2022
     seed_all(seed)
@@ -138,11 +135,15 @@ if __name__ == '__main__':
     earlystopping_patience = args.earlystopping_patience # 11
     earlystopping_trigger = args.earlystopping_trigger # 0
     earlystopping_eps = args.earlystopping_eps # 1e-4
+    batch_size = 8
+    num_epoch = 200
 
     # make output directory
     folder = 'trial'
     output_dir = f'./output_single/{folder}'
     os.makedirs(output_dir, exist_ok=True)
+    # get logger
+    logger = get_logger(output_dir)
 
     # determine paste classes and its probability by cnt_df
     if paste_by == 'cnt':
@@ -206,7 +207,7 @@ if __name__ == '__main__':
         augmentation=get_validation_augmentation(), 
         preprocessing=get_preprocessing(preprocessing_fn),
     )
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=0,
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0,
                             worker_init_fn= seed_worker)
     valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=0)
 
@@ -224,7 +225,7 @@ if __name__ == '__main__':
                             ignore_index = label2num['border'])
     focal = smp.losses.FocalLoss(mode = 'multiclass', 
                                 ignore_index = label2num['border'])
-    loss = DiceFocal(dice, focal)
+    loss = DiceFocal(dice, focal, len(classes_of_interest))
     loss_name, metric_name  = 'loss', 'm_IoU'
     loss_names = [loss_name, 'dice_loss', 'focal_loss']
     metrics = [
@@ -258,11 +259,11 @@ if __name__ == '__main__':
         loss_names=loss_names
     )
 
-    scheduler = ReduceLROnPlateau(optimizer, 'max', patience=5)
+    scheduler = PolyLR(optimizer, int(num_epoch*len(train_dataset)/batch_size))
 
     max_score = 0
     logger.info('Train Started')
-    for i in range(1, 2): 
+    for i in range(1, num_epoch+1): 
         logger.info('\nEpoch: {}'.format(i))
         train_logs = train_epoch.run(train_loader)
         logger.info(train_logs)
@@ -286,7 +287,7 @@ if __name__ == '__main__':
         else:
             earlystopping_trigger = 0
 
-        scheduler.step(valid_logs[f'{metric_name}'])
+        scheduler.step()
 
     # test with best model on valdiation dataset
     test_df = pd.read_csv('./data/test_df.csv', index_col=0)
@@ -324,4 +325,4 @@ if __name__ == '__main__':
     class_result = result_df.apply(lambda x: np.nanmean(x))
     mean_iou = np.mean(class_result)
     logger.info(class_result)
-    logger.info('mean IoU: ', mean_iou)
+    logger.info(f'mean IoU: {mean_iou}')

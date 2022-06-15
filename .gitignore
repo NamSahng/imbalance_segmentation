@@ -1,4 +1,5 @@
 output/
+output_single/
 data/VOCdevkit/
 src/utils/__pycache__/
 .vscode/

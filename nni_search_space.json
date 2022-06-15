@@ -1,13 +1,13 @@
 {
-    "split_rs" : {"_type": "choice", "_value": [1, 2, 3] },
+    "split_rs" : {"_type": "choice", "_value": [1, 2, 3, 4, 5] },
     "split_fnum" : {"_type": "choice", "_value": [0]},
     "configs" : {"_type": "choice", "_value": ["FALSE random x2 FALSE none",
-                                               "FALSE skf_major x2 FALSE none",
+                                               "FALSE mskf x2 FALSE none",
                                                "TRUE random x2 FALSE none",
-                                               "TRUE skf_major cnt FALSE none",
+                                               "TRUE mskf cnt FALSE none",
                                                "TRUE skf_prop cluster FALSE none",
                                                "TRUE random x2 TRUE cnt",
                                                "TRUE random x2 TRUE performance",
-                                               "TRUE skf_major cnt TRUE cnt",
-                                               "TRUE skf_major cnt TRUE performance"]}
+                                               "TRUE mskf cnt TRUE cnt",
+                                               "TRUE mskf cnt TRUE performance"]}
 }

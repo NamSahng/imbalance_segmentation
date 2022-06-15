@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from PIL import Image
 from sklearn.model_selection import KFold, StratifiedKFold
+from iterstrat.ml_stratifiers import MultilabelStratifiedKFold
 from sklearn.cluster import KMeans
 from sklearn import metrics
 import pickle
@@ -240,6 +241,9 @@ if __name__ == '__main__':
     for rs in range(1,6):
         kfold = KFold(n_splits=NUM_SPLIT, random_state=rs, shuffle=True)
         skf = StratifiedKFold(n_splits=NUM_SPLIT, random_state=rs, shuffle=True)
+        mskf = MultilabelStratifiedKFold(n_splits=NUM_SPLIT,random_state=rs, shuffle=True)
+        label_onehot_values = train_df[label_cnt_cols].astype(int).values
+
         for fold, (train_idx, val_idx) in enumerate(kfold.split(train_df.index)):        
             train_df.loc[train_df.index.isin(train_idx), f'random_rstate{rs}_fold{fold}'] = 'train'
             train_df.loc[train_df.index.isin(val_idx), f'random_rstate{rs}_fold{fold}'] = 'val'
@@ -249,6 +253,9 @@ if __name__ == '__main__':
         for fold, (train_idx, val_idx) in enumerate(skf.split(train_df.index, train_df.major_label)):        
             train_df.loc[train_df.index.isin(train_idx), f'skf_major_rstate{rs}_fold{fold}'] = 'train'
             train_df.loc[train_df.index.isin(val_idx), f'skf_major_rstate{rs}_fold{fold}'] = 'val'
+        for fold, (train_idx, val_idx) in enumerate(mskf.split(train_df.index, label_onehot_values)):
+            train_df.loc[train_df.index.isin(train_idx), f'mskf_rstate{rs}_fold{fold}'] = 'train'
+            train_df.loc[train_df.index.isin(val_idx), f'mskf_rstate{rs}_fold{fold}'] = 'val'
 
     train_df.to_csv('./data/train_df.csv')
     test_df.to_csv('./data/test_df.csv')

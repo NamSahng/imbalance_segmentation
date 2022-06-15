@@ -12,7 +12,6 @@ import segmentation_models_pytorch as smp
 
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import ConcatDataset
 
 from tqdm import tqdm
@@ -24,7 +23,8 @@ from utils.augmentation import get_training_augmentation, \
                                 get_validation_augmentation, \
                                 get_preaug, get_postaug, \
                                 get_preprocessing
-from utils.losses import DiceFocal                                                      
+from utils.losses import DiceFocal
+from utils.scheduler import PolyLR                                                      
 
 logger = logging.getLogger('imbalace_seg_NNI')
 
@@ -45,6 +45,10 @@ def seed_all(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    # upsample_bilinear2d_backward_out_cuda
+    # https://discuss.pytorch.org/t/deterministic-behavior-using-bilinear2d/131355/5
+    # torch.use_deterministic_algorithms(True)
+    
 
 def get_vc_df(cur_train_df, col):
     cnt_vc = pd.DataFrame(cur_train_df[col].value_counts())
@@ -56,7 +60,7 @@ def get_vc_df(cur_train_df, col):
 
 def get_params():
     # Training settings
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser = argparse.ArgumentParser()
     parser.add_argument('--split_rs', type=int, default=1,
                         help='random state of train validation split')
     parser.add_argument('--split_fnum', type=int, default=0,
@@ -83,7 +87,7 @@ def main(args):
     configs = args['configs']
     imbalance, split, resampling_strategy, copypaste, paste_by = configs.split(' ')
     imbalance = True if imbalance == 'TRUE' else False
-    lr = 0.1
+    lr = 0.01
     encoder = 'resnet101'
     encoder_weights = 'imagenet'
     device = 'cuda'
@@ -91,9 +95,11 @@ def main(args):
     copypaste_prop = None if copypaste == 'FALSE' else 1.0
     weight_decay = 1e-4
     momentum = 0.9
-    earlystopping_patience = 11
+    earlystopping_patience = 12
     earlystopping_trigger = 0
-    earlystopping_eps = 1e-4
+    earlystopping_eps = 1e-5
+    batch_size = 8
+    num_epoch = 200
 
     # make output directory
     folder = args['configs'].replace(' ','_')
@@ -162,7 +168,7 @@ def main(args):
         augmentation=get_validation_augmentation(), 
         preprocessing=get_preprocessing(preprocessing_fn),
     )
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=0,
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0,
                             worker_init_fn= seed_worker)
     valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=0)
 
@@ -180,7 +186,7 @@ def main(args):
                             ignore_index = label2num['border'])
     focal = smp.losses.FocalLoss(mode = 'multiclass', 
                                 ignore_index = label2num['border'])
-    loss = DiceFocal(dice, focal)
+    loss = DiceFocal(dice, focal, len(classes_of_interest))
     loss_name, metric_name  = 'loss', 'm_IoU'
     loss_names = [loss_name, 'dice_loss', 'focal_loss']
     metrics = [
@@ -214,17 +220,17 @@ def main(args):
         loss_names=loss_names
     )
 
-    scheduler = ReduceLROnPlateau(optimizer, 'max', patience=5)
-
+    scheduler = PolyLR(optimizer, int(num_epoch*len(train_dataset)/batch_size))
     max_score = 0
     logger.info('Train Started')
-    for i in range(1, 201): 
+    for i in range(1, num_epoch+1): 
         logger.info('\nEpoch: {}'.format(i))
         train_logs = train_epoch.run(train_loader)
         logger.info(train_logs)
         logger.info(f"train loss:{train_logs[f'{loss_name}']:.4f}, train iou:{train_logs[f'{metric_name}']:.4f}")
         valid_logs = valid_epoch.run(valid_loader)
-        logger.info(f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.3f}")
+        logger.info(valid_logs)
+        logger.info(f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.4f}")
         nni.report_intermediate_result(valid_logs[f'{metric_name}'])
 
         # Save best validation model
@@ -242,8 +248,7 @@ def main(args):
                 break
         else:
             earlystopping_trigger = 0
-
-        scheduler.step(valid_logs[f'{metric_name}'])
+        scheduler.step()
 
     # test with best model on valdiation dataset
     test_df = pd.read_csv('./data/test_df.csv', index_col=0)
@@ -281,7 +286,7 @@ def main(args):
     class_result = result_df.apply(lambda x: np.nanmean(x))
     mean_iou = np.mean(class_result)
     logger.info(class_result)
-    logger.info('mean IoU: ', mean_iou)
+    logger.info(f'mean IoU: {mean_iou}')
     nni.report_final_result(mean_iou)
 
 if __name__ == '__main__':
