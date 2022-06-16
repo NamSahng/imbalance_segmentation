@@ -1,14 +1,16 @@
-
-import numpy as np
-import re
-import matplotlib.pyplot as plt
 import pickle
+import re
+
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 def get_labedict():
-    label_dict_loc = './data/label_dict.pkl'
-    with open(label_dict_loc, 'rb') as f:
+    label_dict_loc = "./data/label_dict.pkl"
+    with open(label_dict_loc, "rb") as f:
         labeldict = pickle.load(f)
     return labeldict
+
 
 def get_num2color(num2label):
     # https://en.wikipedia.org/wiki/Help:Distinguishable_colors
@@ -38,21 +40,22 @@ def get_num2color(num2label):
     {255,255,0}	#FFFF00	 	Yellow
     {255,80,5}	#FF5005	 	Zinnia"""
 
-    colors = re.findall(r'\d+,\d+,\d+', colors)
-    colors= [[int(k) for k in c.split(',')] for c in colors]
+    colors = re.findall(r"\d+,\d+,\d+", colors)
+    colors = [[int(k) for k in c.split(",")] for c in colors]
 
     num_classes = len(num2label.keys())
     num2color = dict(zip(num2label.keys(), colors[:num_classes]))
-    num2color[0] = [25,25,25]
-    num2color[255] = [255,255,255]
+    num2color[0] = [25, 25, 25]
+    num2color[255] = [255, 255, 255]
     return num2color
 
 
 def color_mask(mask, num2color):
-    colored_mask = np.zeros((mask.shape[0], mask.shape[1], 3)).astype(np.uint8) 
+    colored_mask = np.zeros((mask.shape[0], mask.shape[1], 3)).astype(np.uint8)
     for j in num2color.keys():
         colored_mask[mask == j] = num2color[j]
     return colored_mask
+
 
 def visualize(num2color, **images):
     """PLot images in one row."""
@@ -62,9 +65,8 @@ def visualize(num2color, **images):
         plt.subplot(1, n, i + 1)
         plt.xticks([])
         plt.yticks([])
-        plt.title(' '.join(name.split('_')).title())
-        if name == 'mask':
+        plt.title(" ".join(name.split("_")).title())
+        if name == "mask":
             image = color_mask(image, num2color)
         plt.imshow(image)
     plt.show()
-

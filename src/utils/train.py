@@ -1,10 +1,21 @@
 import sys
+
+import numpy as np
 import torch
 from tqdm import tqdm as tqdm
-import numpy as np
+
 
 class Epoch:
-    def __init__(self, model, loss, metrics, stage_name, loss_names=None, device="cpu", verbose=True):
+    def __init__(
+        self,
+        model,
+        loss,
+        metrics,
+        stage_name,
+        loss_names=None,
+        device="cpu",
+        verbose=True,
+    ):
         self.model = model
         self.loss = loss
         self.loss_names = loss_names
@@ -39,7 +50,9 @@ class Epoch:
         logs = {}
         loss_meter = AverageValueMeter()
         loss_meters = {loss_name: AverageValueMeter() for loss_name in self.loss_names}
-        metrics_meters = {metric.__name__: AverageValueMeter() for metric in self.metrics}
+        metrics_meters = {
+            metric.__name__: AverageValueMeter() for metric in self.metrics
+        }
         with tqdm(
             dataloader,
             desc=self.stage_name,
@@ -74,8 +87,18 @@ class Epoch:
 
         return logs
 
+
 class TrainEpoch(Epoch):
-    def __init__(self, model, loss, metrics, optimizer, loss_names=None, device="cpu", verbose=True):
+    def __init__(
+        self,
+        model,
+        loss,
+        metrics,
+        optimizer,
+        loss_names=None,
+        device="cpu",
+        verbose=True,
+    ):
         super().__init__(
             model=model,
             loss=loss,
@@ -95,15 +118,18 @@ class TrainEpoch(Epoch):
         prediction = self.model.forward(x)
         loss = self.loss(prediction, y)
         if isinstance(loss, dict):
-            cur_loss = loss['loss']
+            cur_loss = loss["loss"]
             cur_loss.backward()
         else:
             loss.backward()
         self.optimizer.step()
         return loss, prediction
 
+
 class ValidEpoch(Epoch):
-    def __init__(self, model, loss, metrics, loss_names=None, device="cpu", verbose=True):
+    def __init__(
+        self, model, loss, metrics, loss_names=None, device="cpu", verbose=True
+    ):
         super().__init__(
             model=model,
             loss=loss,
@@ -122,7 +148,6 @@ class ValidEpoch(Epoch):
             prediction = self.model.forward(x)
             loss = self.loss(prediction, y)
         return loss, prediction
-
 
 
 class Meter(object):

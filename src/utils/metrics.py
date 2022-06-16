@@ -1,42 +1,49 @@
-import torch
-import numpy as np
-import segmentation_models_pytorch as smp
 from typing import Optional
 
+import numpy as np
+import segmentation_models_pytorch as smp
+import torch
+
+
 class Multiclass_IoU_Dice(smp.utils.base.Metric):
-    def __init__(self, mode="iou",
-                    threshold=None,
-                    eps=1e-7,
-                    nan_score_on_empty=False,
-                    classes_of_interest=None,
-                    ignore_index=None,
-                    mean_score = True,
-                    name = None,
-                    **kwargs):
+    def __init__(
+        self,
+        mode="iou",
+        threshold=None,
+        eps=1e-7,
+        nan_score_on_empty=False,
+        classes_of_interest=None,
+        ignore_index=None,
+        mean_score=True,
+        name=None,
+        **kwargs
+    ):
         super().__init__(**kwargs)
-        
+
         self.mode = mode
         self.threshold = threshold
         self.eps = eps
         self.nan_score_on_empty = nan_score_on_empty
         self.classes_of_interest = classes_of_interest
         self.ignore_index = ignore_index
-        self.mean_score = mean_score  
+        self.mean_score = mean_score
         self._name = name
-    
+
     def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor):
-        score = multiclass_dice_iou_score(y_pred, 
-                                         y_true,
-                                         self.mode,
-                                        self.threshold,
-                                        self.eps,
-                                        self.nan_score_on_empty,
-                                        self.classes_of_interest,
-                                        self.ignore_index,
-                                        self.mean_score
-                                        )
+        score = multiclass_dice_iou_score(
+            y_pred,
+            y_true,
+            self.mode,
+            self.threshold,
+            self.eps,
+            self.nan_score_on_empty,
+            self.classes_of_interest,
+            self.ignore_index,
+            self.mean_score,
+        )
 
         return score
+
 
 def binary_dice_iou_score(
     y_pred: torch.Tensor,
@@ -87,11 +94,11 @@ def multiclass_dice_iou_score(
     nan_score_on_empty=False,
     classes_of_interest=None,
     ignore_index=None,
-    mean_score=True
+    mean_score=True,
 ):
     batch_size = y_preds.shape[0]
     mious = []
-    
+
     for k in range(batch_size):
         y_pred = y_preds[k]
         y_true = y_trues[k]
@@ -127,4 +134,3 @@ def multiclass_dice_iou_score(
         return np.nanmean(np.nanmean(mious, axis=1))
     else:
         return mious
-    
