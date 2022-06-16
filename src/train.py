@@ -226,7 +226,7 @@ if __name__ == '__main__':
     focal = smp.losses.FocalLoss(mode = 'multiclass', 
                                 ignore_index = label2num['border'])
     loss = DiceFocal(dice, focal, len(classes_of_interest))
-    loss_name, metric_name  = 'loss', 'm_IoU'
+    loss_name, metric_name = 'loss', 'm_IoU'
     loss_names = [loss_name, 'dice_loss', 'focal_loss']
     metrics = [
         Multiclass_IoU_Dice(mean_score=True,
@@ -271,12 +271,6 @@ if __name__ == '__main__':
         valid_logs = valid_epoch.run(valid_loader)
         logger.info(f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.3f}")
 
-        # Save best validation model
-        #if (max_score < valid_logs[f'{metric_name}']) and (i > 50):
-        if (max_score < valid_logs[f'{metric_name}']):
-            max_score = valid_logs[f'{metric_name}']
-            torch.save(model.state_dict(), os.path.join(output_dir, 'best_model.pt'))
-            logger.info('Model saved!')
         
         # Early Stopping
         if valid_logs[f'{metric_name}'] < max_score + earlystopping_eps:
@@ -286,6 +280,13 @@ if __name__ == '__main__':
                 break
         else:
             earlystopping_trigger = 0
+        # Save best validation model
+        #if (max_score < valid_logs[f'{metric_name}']) and (i > 50):
+        if (max_score < valid_logs[f'{metric_name}']):
+            max_score = valid_logs[f'{metric_name}']
+            torch.save(model.state_dict(), os.path.join(output_dir, 'best_model.pt'))
+            logger.info('Model saved!')
+
 
         scheduler.step()
 

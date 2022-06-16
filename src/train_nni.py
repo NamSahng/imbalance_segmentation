@@ -95,9 +95,9 @@ def main(args):
     copypaste_prop = None if copypaste == 'FALSE' else 1.0
     weight_decay = 1e-4
     momentum = 0.9
-    earlystopping_patience = 12
+    earlystopping_patience = 11
     earlystopping_trigger = 0
-    earlystopping_eps = 1e-5
+    earlystopping_eps = 1e-3
     batch_size = 8
     num_epoch = 200
 
@@ -186,8 +186,9 @@ def main(args):
                             ignore_index = label2num['border'])
     focal = smp.losses.FocalLoss(mode = 'multiclass', 
                                 ignore_index = label2num['border'])
-    loss = DiceFocal(dice, focal, len(classes_of_interest))
-    loss_name, metric_name  = 'loss', 'm_IoU'
+    # loss = DiceFocal(dice, focal, len(classes_of_interest))
+    loss = DiceFocal(dice, focal) #len(classes_of_interest))
+    loss_name, metric_name = 'loss', 'm_IoU'
     loss_names = [loss_name, 'dice_loss', 'focal_loss']
     metrics = [
         Multiclass_IoU_Dice(mean_score=True,
@@ -232,12 +233,6 @@ def main(args):
         logger.info(valid_logs)
         logger.info(f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.4f}")
         nni.report_intermediate_result(valid_logs[f'{metric_name}'])
-
-        # Save best validation model
-        if (max_score < valid_logs[f'{metric_name}']) and (i > 50):
-            max_score = valid_logs[f'{metric_name}']
-            torch.save(model.state_dict(), os.path.join(output_dir, 'best_model.pt'))
-            logger.info('Model saved!')
         
         # Early Stopping
         if valid_logs[f'{metric_name}'] < max_score + earlystopping_eps:
@@ -248,6 +243,13 @@ def main(args):
                 break
         else:
             earlystopping_trigger = 0
+        
+        # Save best validation model
+        if (max_score < valid_logs[f'{metric_name}']) and (i > 50):
+            max_score = valid_logs[f'{metric_name}']
+            torch.save(model.state_dict(), os.path.join(output_dir, 'best_model.pt'))
+            logger.info('Model saved!')
+
         scheduler.step()
 
     # test with best model on valdiation dataset
