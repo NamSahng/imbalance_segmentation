@@ -251,6 +251,7 @@ if __name__ == "__main__":
         num_workers=0,
         worker_init_fn=seed_worker,
     )
+    # valid dataset's batch size should be 1 for class metrics
     valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=0)
 
     # create segmentation model with pretrained encoder
@@ -266,7 +267,8 @@ if __name__ == "__main__":
         mode="multiclass", from_logits=False, ignore_index=label2num["border"]
     )
     focal = smp.losses.FocalLoss(mode="multiclass", ignore_index=label2num["border"])
-    loss = DiceFocal(dice, focal, len(classes_of_interest))
+    # loss = DiceFocal(dice, focal, len(classes_of_interest))
+    loss = DiceFocal(dice, focal)
     loss_name, metric_name = "loss", "m_IoU"
     loss_names = [loss_name, "dice_loss", "focal_loss"]
     metrics = [
@@ -277,6 +279,13 @@ if __name__ == "__main__":
             name=metric_name,
         )
     ]
+    class_metrics = Multiclass_IoU_Dice(
+        mean_score=False,
+        nan_score_on_empty=True,
+        classes_of_interest=classes_of_interest,
+        name=metric_name,
+        class_names= [num2label[i] for i in classes_of_interest] # label_names without borders
+    )
 
     optimizer = torch.optim.SGD(
         params=[
@@ -297,6 +306,7 @@ if __name__ == "__main__":
         device=device,
         verbose=verbose,
         loss_names=loss_names,
+        class_metrics=class_metrics
     )
     valid_epoch = ValidEpoch(
         model,
@@ -305,10 +315,10 @@ if __name__ == "__main__":
         device=device,
         verbose=verbose,
         loss_names=loss_names,
+        class_metrics=class_metrics
     )
 
     scheduler = PolyLR(optimizer, int(num_epoch * len(train_dataset) / batch_size))
-
     max_score = 0
     logger.info("Train Started")
     for i in range(1, num_epoch + 1):
@@ -319,8 +329,9 @@ if __name__ == "__main__":
             f"train loss:{train_logs[f'{loss_name}']:.4f}, train iou:{train_logs[f'{metric_name}']:.4f}"
         )
         valid_logs = valid_epoch.run(valid_loader)
+        logger.info(valid_logs)
         logger.info(
-            f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.3f}"
+            f"valid loss:{valid_logs[f'{loss_name}']:.4f}, valid iou:{valid_logs[f'{metric_name}']:.4f}"
         )
 
         # Early Stopping

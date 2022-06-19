@@ -86,16 +86,20 @@ def get_params():
     # Training settings
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--lr", type=float,
+        "--lr",
+        type=float,
     )
     parser.add_argument(
-        "--loss", type=str,
+        "--loss",
+        type=str,
     )
     parser.add_argument(
-        "--encoder_lr", type=float,
+        "--encoder_lr",
+        type=float,
     )
     args, _ = parser.parse_known_args()
     return args
+
 
 def main(args):
     # load data
@@ -113,9 +117,9 @@ def main(args):
     configs = "FALSE mskf x2 FALSE none"
     imbalance, split, resampling_strategy, copypaste, paste_by = configs.split(" ")
     imbalance = True if imbalance == "TRUE" else False
-    lr = args['lr'] # 0.1 0.01 -> model couldn't predict on minor classes on test data
+    lr = args["lr"]  # 0.1 0.01 -> model couldn't predict on minor classes on test data
     encoder = "resnet101"
-    encoder_weights =  'imagenet'
+    encoder_weights = "imagenet"
     device = "cuda"
     verbose = False
     copypaste_prop = None if copypaste == "FALSE" else 1.0
@@ -130,9 +134,10 @@ def main(args):
     # make output directory
     # folder = args["configs"].replace(" ", "_")
     from datetime import datetime
+
     cur_time = datetime.now()
     folder = cur_time.strftime("%y%m%d_%H%M%S")
-    folder = f"{args['lr']}_{args['loss']}_{args['encoder_lr']}".replace('.', '_')
+    folder = f"{args['lr']}_{args['loss']}_{args['encoder_lr']}".replace(".", "_")
     output_dir = f"./output/{folder}"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -223,27 +228,29 @@ def main(args):
     )
 
     # set metric and loss
-    if args['loss'] == 'dicefocal':
+    if args["loss"] == "dicefocal":
         dice = smp.losses.DiceLoss(
             mode="multiclass", from_logits=True, ignore_index=label2num["border"]
         )
-        focal = smp.losses.FocalLoss(mode="multiclass", ignore_index=label2num["border"])
+        focal = smp.losses.FocalLoss(
+            mode="multiclass", ignore_index=label2num["border"]
+        )
         loss = DiceFocal(dice, focal)
         loss_name, metric_name = "loss", "m_IoU"
         loss_names = [loss_name, "dice_loss", "focal_loss"]
-    elif args['loss'] == 'dice':
-        loss =  smp.losses.DiceLoss(
+    elif args["loss"] == "dice":
+        loss = smp.losses.DiceLoss(
             mode="multiclass", from_logits=True, ignore_index=label2num["border"]
         )
         loss.__name__ = "loss"
         loss_name, metric_name = "loss", "m_IoU"
         loss_names = None
-    elif args['loss'] == 'focal':
+    elif args["loss"] == "focal":
         loss = smp.losses.FocalLoss(mode="multiclass", ignore_index=label2num["border"])
         loss.__name__ = "loss"
         loss_name, metric_name = "loss", "m_IoU"
         loss_names = None
-    
+
     metrics = [
         Multiclass_IoU_Dice(
             mean_score=True,
@@ -257,11 +264,13 @@ def main(args):
         nan_score_on_empty=True,
         classes_of_interest=classes_of_interest,
         name=metric_name,
-        class_names= [num2label[i] for i in classes_of_interest] # label_names without borders
+        class_names=[
+            num2label[i] for i in classes_of_interest
+        ],  # label_names without borders
     )
     optimizer = torch.optim.SGD(
         params=[
-            {"params": model.encoder.parameters(), "lr": args['encoder_lr']},
+            {"params": model.encoder.parameters(), "lr": args["encoder_lr"]},
             # {"params": model.encoder.parameters(), "lr": lr},
             {"params": model.decoder.parameters(), "lr": lr},
             {"params": model.segmentation_head.parameters(), "lr": lr},
@@ -279,7 +288,7 @@ def main(args):
         device=device,
         verbose=verbose,
         loss_names=loss_names,
-        class_metrics=class_metrics
+        class_metrics=class_metrics,
     )
     valid_epoch = ValidEpoch(
         model,
@@ -288,7 +297,7 @@ def main(args):
         device=device,
         verbose=verbose,
         loss_names=loss_names,
-        class_metrics=class_metrics
+        class_metrics=class_metrics,
     )
 
     # scheduler = PolyLR(optimizer, int(num_epoch * len(train_dataset) / batch_size))
@@ -297,7 +306,7 @@ def main(args):
     max_score = 0
     logger.info("Train Started")
     for i in range(1, num_epoch + 1):
-        logger.info("="*64)
+        logger.info("=" * 64)
         logger.info("\nEpoch: {}".format(i))
         train_logs = train_epoch.run(train_loader)
         logger.info(train_logs)
@@ -321,15 +330,17 @@ def main(args):
         else:
             earlystopping_trigger = 0
         # Save best validation model
-        #if (max_score < valid_logs[f"{metric_name}"]) and (i > 50):
-        if (max_score < valid_logs[f"{metric_name}"]):
+        # if (max_score < valid_logs[f"{metric_name}"]) and (i > 50):
+        if max_score < valid_logs[f"{metric_name}"]:
             max_score = valid_logs[f"{metric_name}"]
             torch.save(model.state_dict(), os.path.join(output_dir, "best_model.pt"))
             logger.info("Model saved!")
-        cur_encoder_lr = scheduler.optimizer.param_groups[0]['lr']
-        cur_decoder_lr = scheduler.optimizer.param_groups[1]['lr']
-        logger.info(f"encoder lr: {cur_encoder_lr:.4f}, decoder lr: {cur_decoder_lr:.4f}")
-        logger.info("="*64)
+        cur_encoder_lr = scheduler.optimizer.param_groups[0]["lr"]
+        cur_decoder_lr = scheduler.optimizer.param_groups[1]["lr"]
+        logger.info(
+            f"encoder lr: {cur_encoder_lr:.4f}, decoder lr: {cur_decoder_lr:.4f}"
+        )
+        logger.info("=" * 64)
         scheduler.step()
 
     # test with best model on valdiation dataset
@@ -338,7 +349,7 @@ def main(args):
         encoder_name=encoder,
         encoder_weights=encoder_weights,
         classes=len(label_names),
-        #activation="softmax2d",
+        # activation="softmax2d",
     )
     best_model.load_state_dict(torch.load(os.path.join(output_dir, "best_model.pt")))
     test_dataset = VOCDataset(

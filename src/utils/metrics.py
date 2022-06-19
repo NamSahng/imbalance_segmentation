@@ -16,6 +16,7 @@ class Multiclass_IoU_Dice(smp.utils.base.Metric):
         ignore_index=None,
         mean_score=True,
         name=None,
+        class_names=None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -28,6 +29,7 @@ class Multiclass_IoU_Dice(smp.utils.base.Metric):
         self.ignore_index = ignore_index
         self.mean_score = mean_score
         self._name = name
+        self.class_names = class_names
 
     def forward(self, y_pred: torch.Tensor, y_true: torch.Tensor):
         score = multiclass_dice_iou_score(
@@ -110,7 +112,7 @@ def multiclass_dice_iou_score(
         if classes_of_interest is None:
             classes_of_interest = range(num_classes)
 
-        for class_index in classes_of_interest:
+        for class_index in classes_of_interest: # 1 ~ 20, 0
             y_pred_i = (y_pred == class_index).float()
             y_true_i = (y_true == class_index).float()
 

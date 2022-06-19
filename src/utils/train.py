@@ -13,6 +13,7 @@ class Epoch:
         metrics,
         stage_name,
         loss_names=None,
+        class_metrics=None,
         device="cpu",
         verbose=True,
     ):
@@ -20,6 +21,7 @@ class Epoch:
         self.loss = loss
         self.loss_names = loss_names
         self.metrics = metrics
+        self.class_metrics = class_metrics
         self.stage_name = stage_name
         self.verbose = verbose
         self.device = device
@@ -49,10 +51,12 @@ class Epoch:
 
         logs = {}
         loss_meter = AverageValueMeter()
-        loss_meters = {loss_name: AverageValueMeter() for loss_name in self.loss_names}
+        if self.loss_names:
+            loss_meters = {loss_name: AverageValueMeter() for loss_name in self.loss_names}
         metrics_meters = {
             metric.__name__: AverageValueMeter() for metric in self.metrics
         }
+        results = []
         with tqdm(
             dataloader,
             desc=self.stage_name,
@@ -62,7 +66,6 @@ class Epoch:
             for x, y, _ in iterator:
                 x, y = x.to(self.device), y.to(self.device)
                 loss, y_pred = self.batch_update(x, y)
-
                 if isinstance(loss, dict):
                     for loss_name in loss.keys():
                         loss_value = loss[loss_name].cpu().detach().numpy()
@@ -77,6 +80,9 @@ class Epoch:
                 for metric_fn in self.metrics:
                     metric_value = metric_fn(y_pred, y)
                     metrics_meters[metric_fn.__name__].add(metric_value)
+                if self.class_metrics:
+                    c_metric_values = self.class_metrics(y_pred, y)
+                    results.extend(c_metric_values)
                 metrics_logs = {k: v.mean for k, v in metrics_meters.items()}
                 logs.update(metrics_logs)
                 logs.update(loss_logs)
@@ -84,7 +90,10 @@ class Epoch:
                 if self.verbose:
                     s = self._format_logs(logs)
                     iterator.set_postfix_str(s)
-
+        if self.class_metrics:
+            class_result = np.nanmean(results, axis=0)
+            class_result_dict = dict(zip(self.class_metrics.class_names, class_result))
+            logs.update(class_result_dict)
         return logs
 
 
@@ -95,6 +104,8 @@ class TrainEpoch(Epoch):
         loss,
         metrics,
         optimizer,
+        scheduler,
+        class_metrics=None,
         loss_names=None,
         device="cpu",
         verbose=True,
@@ -103,12 +114,14 @@ class TrainEpoch(Epoch):
             model=model,
             loss=loss,
             metrics=metrics,
+            class_metrics=class_metrics,
             stage_name="train",
             loss_names=loss_names,
             device=device,
             verbose=verbose,
         )
         self.optimizer = optimizer
+        self.scheduler = scheduler
 
     def on_epoch_start(self):
         self.model.train()
@@ -123,17 +136,19 @@ class TrainEpoch(Epoch):
         else:
             loss.backward()
         self.optimizer.step()
+        self.scheduler.step()
         return loss, prediction
 
 
 class ValidEpoch(Epoch):
     def __init__(
-        self, model, loss, metrics, loss_names=None, device="cpu", verbose=True
+        self, model, loss, metrics, class_metrics=None, loss_names=None, device="cpu", verbose=True
     ):
         super().__init__(
             model=model,
             loss=loss,
             metrics=metrics,
+            class_metrics=class_metrics,
             stage_name="valid",
             loss_names=loss_names,
             device=device,

@@ -40,13 +40,14 @@ def seed_all(seed):
     if not seed:
         seed = 10
     print("[ Using Seed : ", seed, " ]")
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.cuda.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.manual_seed(seed)
+    # torch.cuda.manual_seed_all(seed)
+    # torch.cuda.manual_seed(seed)
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False
+
     # upsample_bilinear2d_backward_out_cuda
     # https://discuss.pytorch.org/t/deterministic-behavior-using-bilinear2d/131355/5
     # torch.use_deterministic_algorithms(True)
@@ -100,7 +101,7 @@ def main(args):
     configs = args["configs"]
     imbalance, split, resampling_strategy, copypaste, paste_by = configs.split(" ")
     imbalance = True if imbalance == "TRUE" else False
-    lr = 0.01
+    lr = 0.01 #
     encoder = "resnet101"
     encoder_weights = "imagenet"
     device = "cuda"
@@ -113,6 +114,7 @@ def main(args):
     earlystopping_eps = 1e-3
     batch_size = 8
     num_epoch = 200
+    loss_function = "focal" # DiceFocal is not working with batch size 8 on RTX 3060
 
     # make output directory
     folder = args["configs"].replace(" ", "_")
@@ -194,25 +196,41 @@ def main(args):
         num_workers=0,
         worker_init_fn=seed_worker,
     )
+    # valid dataset's batch size should be 1 for class metrics
     valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False, num_workers=0)
 
     # create segmentation model with pretrained encoder
+    # If you use softmax2d layer on the end of model, Focal Loss would not work properly
+    # For Dice loss set `from_logits` = False.
     model = smp.DeepLabV3Plus(
         encoder_name=encoder,
         encoder_weights=encoder_weights,
         classes=len(label_names),
-        activation="softmax2d",
+        # activation="softmax2d", 
     )
 
     # set metric and loss
-    dice = smp.losses.DiceLoss(
-        mode="multiclass", from_logits=False, ignore_index=label2num["border"]
-    )
-    focal = smp.losses.FocalLoss(mode="multiclass", ignore_index=label2num["border"])
-    # loss = DiceFocal(dice, focal, len(classes_of_interest))
-    loss = DiceFocal(dice, focal)  # len(classes_of_interest))
+    loss_names = None
     loss_name, metric_name = "loss", "m_IoU"
-    loss_names = [loss_name, "dice_loss", "focal_loss"]
+    if loss_function == 'dicefocal':
+        dice = smp.losses.DiceLoss(
+            mode="multiclass", from_logits=True, ignore_index=label2num["border"]
+        )
+        focal = smp.losses.FocalLoss(mode="multiclass", ignore_index=label2num["border"])
+        loss = DiceFocal(dice, focal)
+        
+        loss_names = [loss_name, "dice_loss", "focal_loss"]
+    elif loss_function == 'dice':
+        loss =  smp.losses.DiceLoss(
+            mode="multiclass", from_logits=True, ignore_index=label2num["border"]
+        )
+        loss.__name__ = "loss"
+        
+    elif loss_function == 'focal':
+        loss = smp.losses.FocalLoss(mode="multiclass", ignore_index=label2num["border"])
+        loss.__name__ = "loss"
+    
+
     metrics = [
         Multiclass_IoU_Dice(
             mean_score=True,
@@ -221,10 +239,17 @@ def main(args):
             name=metric_name,
         )
     ]
-
+    class_metrics = Multiclass_IoU_Dice(
+        mean_score=False,
+        nan_score_on_empty=True,
+        classes_of_interest=classes_of_interest,
+        name=metric_name,
+        class_names= [num2label[i] for i in classes_of_interest] # label_names without borders
+    )
     optimizer = torch.optim.SGD(
         params=[
-            {"params": model.encoder.parameters(), "lr": 0.1 * lr},
+            {"params": model.encoder.parameters(), "lr": 0.01 * lr},
+            # {"params": model.encoder.parameters(), "lr": lr},
             {"params": model.decoder.parameters(), "lr": lr},
             {"params": model.segmentation_head.parameters(), "lr": lr},
         ],
@@ -232,15 +257,17 @@ def main(args):
         momentum=momentum,
         weight_decay=weight_decay,
     )
-
+    scheduler = PolyLR(optimizer, int(num_epoch * len(train_dataset) / batch_size))
     train_epoch = TrainEpoch(
         model,
         loss=loss,
         metrics=metrics,
         optimizer=optimizer,
+        scheduler=scheduler,
         device=device,
         verbose=verbose,
         loss_names=loss_names,
+        class_metrics=class_metrics
     )
     valid_epoch = ValidEpoch(
         model,
@@ -249,12 +276,13 @@ def main(args):
         device=device,
         verbose=verbose,
         loss_names=loss_names,
+        class_metrics=class_metrics
     )
 
-    scheduler = PolyLR(optimizer, int(num_epoch * len(train_dataset) / batch_size))
     max_score = 0
     logger.info("Train Started")
     for i in range(1, num_epoch + 1):
+        logger.info("="*64)
         logger.info("\nEpoch: {}".format(i))
         train_logs = train_epoch.run(train_loader)
         logger.info(train_logs)
@@ -277,14 +305,16 @@ def main(args):
                 break
         else:
             earlystopping_trigger = 0
-
         # Save best validation model
         if (max_score < valid_logs[f"{metric_name}"]) and (i > 50):
             max_score = valid_logs[f"{metric_name}"]
             torch.save(model.state_dict(), os.path.join(output_dir, "best_model.pt"))
             logger.info("Model saved!")
-
-        scheduler.step()
+        cur_encoder_lr = scheduler.optimizer.param_groups[0]['lr']
+        cur_decoder_lr = scheduler.optimizer.param_groups[1]['lr']
+        logger.info(f"encoder lr: {cur_encoder_lr:.4f}, decoder lr: {cur_decoder_lr:.4f}")
+        logger.info("="*64)
+        
 
     # test with best model on valdiation dataset
     test_df = pd.read_csv("./data/test_df.csv", index_col=0)
@@ -292,7 +322,7 @@ def main(args):
         encoder_name=encoder,
         encoder_weights=encoder_weights,
         classes=len(label_names),
-        activation="softmax2d",
+        # activation="softmax2d",
     )
     best_model.load_state_dict(torch.load(os.path.join(output_dir, "best_model.pt")))
     test_dataset = VOCDataset(
