@@ -1,0 +1,5 @@
+{
+    "lr" : {"_type": "choice", "_value": [0.1, 0.05, 0.01, 0.001, 0.0001] },
+    "loss" : {"_type": "choice", "_value": ["dicefocal"] },
+    "encoder_lr": {"_type": "choice", "_value": [ 0.0, 1.0, 0.1, 0.001] }
+}
