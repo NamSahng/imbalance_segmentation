@@ -9,5 +9,6 @@
                                                "TRUE random x2 TRUE cnt",
                                                "TRUE random x2 TRUE performance",
                                                "TRUE mskf cnt TRUE cnt",
-                                               "TRUE mskf cnt TRUE performance"]}
+                                               "TRUE mskf cnt TRUE performance",
+                                               "TRUE mskf x2 FALSE none"]}
 }
