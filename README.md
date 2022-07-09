@@ -48,10 +48,36 @@ VOC2012 dataset were used for the experiment and made `bird`, `cat`, `aeroplane`
 - Overfitting happened due to the small validation set (which is only 1/5 of VOC2012 train dataset). Therefore in my test dataset (VOC 2012 validation) performance is not as good as other pytorch DeepLabv3+ implementation such as [repo](https://github.com/VainF/DeepLabV3Plus-Pytorch) even though I tried to follow many training strategies above. 
 - Main differences are learning rate(Encoder, Decoder), batch size, and early stopping and DeepLabV3+ model.
 
-## 5. Results
-
+- I did minimum HPO on learning rate, encoder learning rate, and loss functions.
 
 &nbsp;
+## 5. Results
+
+- Sampling strategy on dataset B (dataset A is original training samples)
+    - Sampling based on only frequency of classes seems to hurt performance.
+    - Correlation coefficient on (number of classes pixel & performance) and (proportion of classes & performance) was higher than frequency of classes.
+        - correlation analysis on previus results ([notebook](https://github.com/NamSahng/imbalance_segmentation/blob/main/src/exercise_notebooks/correlation_on_results_data.ipynb))
+        - correlation analysis my experiment ([notebook](https://github.com/NamSahng/imbalance_segmentation/blob/main/src/exercise_notebooks/check_result_2.ipynb))
+    - Resampling based on pixel or proportion might help class imbalance problem.
+
+- Splitting train & validation strategy
+    - Multi-label stratified k-fold(mskf) is also counting on frequency of classes. Changing mskf to focus on pixel or proportion might help.
+
+- Copy and Paste Augmentation
+    - Pasting less frequennt labels 
+        - Average performance gained on imbalanced labels: + 0.04241
+        - with preserving other classes: + 0.00130
+    - Pasting low performance labels
+        - Average performance gained on low perfromance labels: + 0.03003
+        - with preserving other classes: + 0.00238
+    - details & wilcoxon rank sum test on mIoU differences:
+        - [notebook](https://github.com/NamSahng/imbalance_segmentation/blob/main/src/exercise_notebooks/check_result_2.ipynb)
+
+- Full Results
+<img src = "./data/results.png">
+
+&nbsp;
+
 
 
 ## 6. How to run
@@ -70,13 +96,26 @@ $ conda activate <new_env>  # activate anaconda environment
 $ make setup                # initial setup for the project
 ```
 
-## Preprocess & Train 
-### train with NNI
+### Preprocess & Train 
+- more about nni commands https://nni.readthedocs.io/en/v2.0/Tutorial/Nnictl.html
 ```bash
-$ 
+$ python src/make_meta.py  # preprocessing
+$ nnictl create --config nni_config.yml # train with nni
 ```
+&nbsp;
 
-## References
-- 
-- 
-- 
+## 7. References
+- https://github.com/trent-b/iterative-stratification
+- https://github.com/microsoft/nni
+- https://github.com/qubvel/segmentation_models.pytorch
+- https://github.com/BloodAxe/pytorch-toolbelt
+- https://github.com/VainF/DeepLabV3Plus-Pytorch
+
+&nbsp;
+## 8. More resources with imbalanced data
+- https://github.com/ZhiningLiu1998/awesome-imbalanced-learning
+- https://arxiv.org/pdf/1901.08394.pdf
+- https://arxiv.org/pdf/2106.09643.pdf
+- https://journalofbigdata.springeropen.com/track/pdf/10.1186/s40537-019-0192-5.pdf
+- https://github.com/mlyg/unified-focal-loss
+- https://arxiv.org/abs/2205.08209
