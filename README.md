@@ -2,7 +2,7 @@
 
 
 ## 1. Abstract
-Class imbalance is very common problem in real world ML/DL problems, and also in semantic segmentation. This repo is an experiment to alleviate the class imbalance problem by using different train-val spitting, data sampling, and data augmentation.
+Class imbalance is very common problem in real world ML/DL tasks, and also in semantic segmentation. This repo is an experiment to alleviate the class imbalance problem by using different train-val spitting, data sampling, and data augmentation.
 
 &nbsp;
 
