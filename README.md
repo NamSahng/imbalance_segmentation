@@ -104,7 +104,17 @@ $ nnictl create --config nni_config.yml # train with nni
 ```
 &nbsp;
 
-## 7. References
+## 7. Appendix
+- experiements on imbalance
+    - <img src = "./data/NNI_exp_img1.png" width="60%">
+    - <img src = "./data/NNI_exp_img2.png" width="60%">
+
+- Simple HPO on qubvel's DeepLab V3+
+    - <img src = "./data/nni_hpo_exp1.png" width="60%">
+    - <img src = "./data/nni_hpo_exp2.png" width="60%">
+
+&nbsp;
+## 8. References
 - https://github.com/trent-b/iterative-stratification
 - https://github.com/microsoft/nni
 - https://github.com/qubvel/segmentation_models.pytorch
@@ -112,7 +122,8 @@ $ nnictl create --config nni_config.yml # train with nni
 - https://github.com/VainF/DeepLabV3Plus-Pytorch
 
 &nbsp;
-## 8. More resources with imbalanced data
+
+## 9. More resources with imbalanced data
 - https://github.com/ZhiningLiu1998/awesome-imbalanced-learning
 - https://arxiv.org/pdf/1901.08394.pdf
 - https://arxiv.org/pdf/2106.09643.pdf
